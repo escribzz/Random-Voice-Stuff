@@ -2,6 +2,7 @@
 
 #created by Erik Knight to use google for voicemail transcription and auto attendant transcription.
 #proxies may be required if used at high volume
+#If using for asterisk voicemail this is the third file required
 
 $filename=$ARGV[0];
 $filetest=0;
