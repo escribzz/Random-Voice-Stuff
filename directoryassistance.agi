@@ -1,0 +1,316 @@
+#!/usr/bin/perl
+use JSON qw( decode_json );     # From CPAN
+use Data::Dumper;               # Perl core module
+#
+# extensions.conf example:
+# exten => s,1,AGI,lookup.agi
+# exten => s,2,Dial,Zap,1
+#
+use Asterisk::AGI;
+use LWP::UserAgent;
+use LWP::Simple;                # From CPAN
+
+# TIMEOUT is maximum number of seconds for http requests (we don't want to take too long)
+$TIMEOUT = 5;
+$VERSION = '0.03';
+# Google API Key 
+$googapi_key="APIKEYHERE";
+$AGI = new Asterisk::AGI;
+my $DONE1 = 0;
+my %input = $AGI->ReadParse();
+$agi_uniqueid = $input{'uniqueid'};
+$company = $input{'context'};
+$agi_callerid = $input{'callerid'};
+$clid=$agi_callerid;
+
+START:
+$companyfile=$agi_uniqueid."company";
+$cityfile=$agi_uniqueid."city";
+$statefile=$agi_uniqueid."state";
+$moreinfoyesfile=$agi_uniqueid."moreyes";
+$moreinfofile=$agi_uniqueid."moreinfofile";
+$AGI->stream_file("directoryassistancecv");
+$AGI->stream_file("statename");
+$AGI->record_file("/tmp/$statefile",'WAV',0,-1,'s=3');
+$AGI->stream_file("cityname");
+$AGI->record_file("/tmp/$cityfile",'WAV',0,-1,'s=3');
+$AGI->stream_file("companyname");
+$AGI->record_file("/tmp/$companyfile",'WAV',0,-1,'s=3');
+$AGI->stream_file("zipcodeorstreetnameyesorno");
+$AGI->record_file("/tmp/$moreinfoyesfile",'WAV',0,-1,'s=3');
+system("/usr/local/bin/sox /tmp/$statefile.WAV -b 16 -r 8000  -t flac /tmp/$statefile.flac");
+system("/usr/local/bin/sox /tmp/$cityfile.WAV -b 16 -r 8000  -t flac /tmp/$cityfile.flac");
+system("/usr/local/bin/sox /tmp/$companyfile.WAV -b 16 -r 8000  -t flac /tmp/$companyfile.flac");
+system("/usr/local/bin/sox /tmp/$moreinfoyesfile.WAV -b 16 -r 8000  -t flac /tmp/$moreinfoyesfile.flac");
+system("/bin/rm -f /tmp/$statefile.WAV");
+system("/bin/rm -f /tmp/$cityfile.WAV");
+system("/bin/rm -f /tmp/$companyfile.WAV");
+system("/bin/rm -f /tmp/$moreinfoyesfile.WAV");
+system("/usr/bin/wget -q --timeout=20 --post-file='/tmp/$statefile.flac' --user-agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_6_8) AppleWebKit/535.7 (KHTML, like Gecko) Chrome/16.0.912.77 Safari/535.7' --header='Content-Type: audio/x-flac; rate=8000;' -O '/tmp/$statefile.json' --no-check-certificate 'https://www.google.com/speech-api/v1/recognize?client=chromium&lang=en-US&maxresults=1&pfilter=1'");
+open(IN,"/tmp/$statefile.json");
+foreach $line (<IN>){
+        $statement1="";
+        $statement="";
+        ($start,$statement1)=split(/:\[/,$line);
+        ($statement,$confidence1)=split(/\",\"confidence\":/,$statement1);
+        $statement =~ s/\{\"utterance\":\"//g;
+        $statement =~ s/\"},/. /g;
+        $statement =~ s/\"\}\]\}/./g;
+        $confidence1 =~ s/\}\]\}//g;
+        }
+$state=$statement;
+close IN;
+system("/bin/rm -f /tmp/$statefile.flac");
+system("/bin/rm -f /tmp/$statefile.json");
+
+system("/usr/bin/wget -q --timeout=20 --post-file='/tmp/$cityfile.flac' --user-agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_6_8) AppleWebKit/535.7 (KHTML, like Gecko) Chrome/16.0.912.77 Safari/535.7' --header='Content-Type: audio/x-flac; rate=8000;' -O '/tmp/$cityfile.json' --no-check-certificate 'https://www.google.com/speech-api/v1/recognize?client=chromium&lang=en-US&maxresults=1&pfilter=1'");
+open(IN,"/tmp/$cityfile.json");
+foreach $line (<IN>){
+	$statement1="";
+        $statement="";
+        ($start,$statement1)=split(/:\[/,$line);
+        ($statement,$confidence1)=split(/\",\"confidence\":/,$statement1);
+        $statement =~ s/\{\"utterance\":\"//g;
+        $statement =~ s/\"},/. /g;
+        $statement =~ s/\"\}\]\}/./g;
+        $confidence1 =~ s/\}\]\}//g;
+
+        }
+$city=$statement;
+close IN;
+system("/bin/rm -f /tmp/$cityfile.flac");
+system("/bin/rm -f /tmp/$cityfile.json");
+
+system("/usr/bin/wget -q --timeout=20 --post-file='/tmp/$companyfile.flac' --user-agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_6_8) AppleWebKit/535.7 (KHTML, like Gecko) Chrome/16.0.912.77 Safari/535.7' --header='Content-Type: audio/x-flac; rate=8000;' -O '/tmp/$companyfile.json' --no-check-certificate 'https://www.google.com/speech-api/v1/recognize?client=chromium&lang=en-US&maxresults=1&pfilter=1'");
+open(IN,"/tmp/$companyfile.json");
+foreach $line (<IN>){
+        $statement1="";
+        $statement="";
+        ($start,$statement1)=split(/:\[/,$line);
+        ($statement,$confidence1)=split(/\",\"confidence\":/,$statement1);
+        $statement =~ s/\{\"utterance\":\"//g;
+        $statement =~ s/\"},/. /g;
+        $statement =~ s/\"\}\]\}/./g;
+        $confidence1 =~ s/\}\]\}//g;
+	
+        }
+$company1=$statement;
+close IN;
+system("/bin/rm -f /tmp/$companyfile.flac");
+system("/bin/rm -f /tmp/$companyfile.json");
+
+system("/usr/bin/wget -q --timeout=20 --post-file='/tmp/$moreinfoyesfile.flac' --user-agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_6_8) AppleWebKit/535.7 (KHTML, like Gecko) Chrome/16.0.912.77 Safari/535.7' --header='Content-Type: audio/x-flac; rate=8000;' -O '/tmp/$moreinfoyesfile.json' --no-check-certificate 'https://www.google.com/speech-api/v1/recognize?client=chromium&lang=en-US&maxresults=1&pfilter=1'");
+open(IN,"/tmp/$moreinfoyesfile.json");
+foreach $line (<IN>){
+        $statement1="";
+        $statement="";
+        ($start,$statement1)=split(/:\[/,$line);
+        ($statement,$confidence1)=split(/\",\"confidence\":/,$statement1);
+        $statement =~ s/\{\"utterance\":\"//g;
+        $statement =~ s/\"},/. /g;
+        $statement =~ s/\"\}\]\}/./g;
+        $confidence1 =~ s/\}\]\}//g;
+
+        }
+$yesmoreinfo=$statement;
+close IN;
+system("/bin/rm -f /tmp/$moreinfoyesfile.flac");
+system("/bin/rm -f /tmp/$moreinfoyesfile.json");
+if ($yesmoreinfo =~ m/yes/ig){
+	$AGI->stream_file("streetnameorzipcode");
+	$AGI->record_file("/tmp/$moreinfofile",'WAV',0,-1,'s=3');
+	system("/usr/local/bin/sox /tmp/$moreinfofile.WAV -b 16 -r 8000  -t flac /tmp/$moreinfofile.flac");
+	system("/bin/rm -f /tmp/$moreinfofile.WAV");
+	system("/usr/bin/wget -q --timeout=20 --post-file='/tmp/$moreinfofile.flac' --user-agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_6_8) AppleWebKit/535.7 (KHTML, like Gecko) Chrome/16.0.912.77 Safari/535.7' --header='Content-Type: audio/x-flac; rate=8000;' -O '/tmp/$moreinfofile.json' --no-check-certificate 'https://www.google.com/speech-api/v1/recognize?client=chromium&lang=en-US&maxresults=1&pfilter=1'");
+	open(IN,"/tmp/$moreinfofile.json");
+	foreach $line (<IN>){
+        $statement1="";
+        $statement="";
+        ($start,$statement1)=split(/:\[/,$line);
+        ($statement,$confidence1)=split(/\",\"confidence\":/,$statement1);
+        $statement =~ s/\{\"utterance\":\"//g;
+        $statement =~ s/\"},/. /g;
+        $statement =~ s/\"\}\]\}/./g;
+        $confidence1 =~ s/\}\]\}//g;
+
+        }
+	$moreinfo=$statement;
+	close IN;
+	system("/bin/rm -f /tmp/$moreinfofile.flac");
+	system("/bin/rm -f /tmp/$moreinfofile.json");
+
+}
+
+#pull list from google
+        my $trendsurl = "https://maps.googleapis.com/maps/api/place/textsearch/json?query=$company1+in+$city+$state+$moreinfo&sensor=false&key=$googapi_key";
+my $json = get( $trendsurl );
+die "Could not get $trendsurl!" unless defined $json;
+my @decoded_json = decode_json($json);
+$jasondump = Dumper(@decoded_json), length(@decoded_json), "\n";
+open(OUT,">/tmp/$agi_uniqueid.txt");
+print OUT $jasondump;
+close OUT;
+$earray=0;
+open(IN,"/tmp/$agi_uniqueid.txt");
+foreach $line (<IN>){
+         if ($line =~ m/formatted_address/g) {
+        chomp($line);
+        $earray++;
+        ($junk,$address[$earray])=split(/\ => /,$line);
+        $address[$earray] =~ s/\"//g;
+        $address[$earray] =~ s/\'//g;
+        $address[$earray] =~ s/, United States,//ig;
+        }
+        if ($line =~ m/name/g) {
+        chomp($line);
+        ($junk,$name[$earray])=split(/\ => /,$line);
+        $name[$earray] =~ s/\"//g;
+        $name[$earray] =~ s/\'//g;
+        $name[$earray] =~ s/\,//g;
+        }
+        if ($line =~ m/\breference\b/g) {
+        chomp($line);
+        ($junk,$reference[$earray])=split(/\ => /,$line);
+        $reference[$earray] =~ s/\,//g;
+        $reference[$earray] =~ s/\'//g;
+        $reference[$earray] =~ s/\"//g;
+        }
+
+}
+close IN;
+system("/bin/rm -f /tmp/$agi_uniqueid.txt");
+$locationcount=$earray;
+
+REPEAT:
+
+$ia=1;
+while($ia <= $locationcount){
+$AGI->exec('Set', "Reference=\"$reference[$ia]\"");
+$text=$name[$ia]." ".$address[$ia];
+system("/usr/bin/wget -q -U Mozilla -O /tmp/$agi_uniqueid.mp3 \"http://translate.google.com/translate_tts?ie=UTF-8&tl=en&q=$text\"");
+#lame path seems to have changed between servers..
+                system("/usr/local/bin/lame --decode /tmp/$agi_uniqueid.mp3 /tmp/$agi_uniqueid.wav");
+                system("/bin/rm /tmp/$agi_uniqueid.mp3");
+                system("/usr/local/bin/sox /tmp/$agi_uniqueid.wav -r 8000 -c 1 /tmp/$agi_uniqueid.gsm");
+                system("/bin/rm /tmp/$agi_uniqueid.wav");
+                $AGI->stream_file("/tmp/$agi_uniqueid");
+		system("/bin/rm /tmp/$agi_uniqueid.gsm");
+
+		$loop2=0;
+                #oneortwo is a sound file that has been created saying one or two
+               #  my $oneortwo1 = $AGI->get_data("oneortwo", "10000", "1");
+		  $AGI->stream_file("sayyesorno");
+        	  $AGI->record_file("/tmp/$moreinfofile",'WAV',0,-1,'s=3');
+        	  system("/usr/local/bin/sox /tmp/$moreinfofile.WAV -b 16 -r 8000  -t flac /tmp/$moreinfofile.flac");
+        	  system("/bin/rm -f /tmp/$moreinfofile.WAV");
+        	  system("/usr/bin/wget -q --timeout=20 --post-file='/tmp/$moreinfofile.flac' --user-agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_6_8) AppleWebKit/535.7 (KHTML, like Gecko) Chrome/16.0.912.77 Safari/535.7' --header='Content-Type: audio/x-flac; rate=8000;' -O '/tmp/$moreinfofile.json' --no-check-certificate 'https://www.google.com/speech-api/v1/recognize?client=chromium&lang=en-US&maxresults=1&pfilter=1'");
+        	  open(IN,"/tmp/$moreinfofile.json");
+        	  foreach $line (<IN>){
+        	  $statement1="";
+          	  $statement="";
+        	  ($start,$statement1)=split(/:\[/,$line);
+        	  ($statement,$confidence1)=split(/\",\"confidence\":/,$statement1);
+        	  $statement =~ s/\{\"utterance\":\"//g;
+        	  $statement =~ s/\"},/. /g;
+        	  $statement =~ s/\"\}\]\}/./g;
+        	  $confidence1 =~ s/\}\]\}//g;
+
+ 		       }
+ 		  $yesorno=$statement;
+        	  close IN;
+        	  system("/bin/rm -f /tmp/$moreinfofile.flac");
+        	  system("/bin/rm -f /tmp/$moreinfofile.json");
+		  if (($yesorno =~ m/yes/ig) || ($yesorno =~ m/1/ig) || ($yesorno =~ m/one/ig)){
+			$oneortwo1=1;
+			}
+			elsif ($yesorno =~ m/no/ig){
+			$oneortwo1=2;	
+                        }
+			elsif ($yesorno =~ m/start/ig){
+			#start over
+			goto START;
+			}
+			elsif ($yesorno =~ m/repeat/ig){
+			#repeat
+			goto REPEAT;
+			}
+			else
+			{
+			$oneortwo1="";
+			}	
+                 $oneortwo=$oneortwo1;
+                if ($oneortwo eq "") {
+                        $DONE1=1;
+                        $AGI->exec('Playback', "anerrorhasoccured");
+                        $AGI->exec('Playback', "goodbye");
+                        $AGI->hangup();
+                        exit(0);
+                        }
+                 if ($oneortwo eq 1){
+			#pull list from google
+			my $trendsurl2 = "https://maps.googleapis.com/maps/api/place/details/json?reference=$reference[$ia]&sensor=false&key=$googapi_key";
+			my $json2 = get( $trendsurl2 );
+			die "Could not get $trendsurl2!" unless defined $json2;
+			my @decoded_json2 = decode_json($json2);
+			$jasondump2 = Dumper(@decoded_json2), length(@decoded_json2), "\n";
+			open(OUT,">/tmp/$agi_uniqueid.txt");
+			print OUT $jasondump2;
+			close OUT;
+			$earray=0;
+			open(IN,"/tmp/$agi_uniqueid.txt");
+			foreach $line (<IN>){
+			  if ($line =~ m/formatted_phone_number/gi) {
+                        chomp($line);
+                        ($junk,$did)=split(/\ => /,$line);
+                        $dud=$did;
+                        $AGI->exec('Set', "SIP=\"$dud\"");
+                        $did =~ s/\"//g;
+                        $did =~ s/\'//g;
+                        $phonedid=$did;
+                        $did =~ s/\(//g;
+                        $did =~ s/\)//g;
+                        $did =~ s/\-//g;
+                        $did =~ s/\ //g;
+                        $did =~ s/\,//g;
+                                }
+                        #this appears to be broken needs fixed
+                         if ($line =~ m/open_now/gi) {
+                        chomp($line);
+                        ($junk,$open)=split(/\ => /,$line);
+                                }
+			}
+			close IN;
+			system("/bin/rm -f /tmp/$agi_uniqueid.txt");
+		
+			$AGI->stream_file("thislocationiscurrently");
+			if ($open =~ m/false/gi){
+			$AGI->stream_file("closed");
+			}
+			else
+			{
+			$AGI->stream_file("open");
+			}
+			system("/usr/bin/wget -q -U Mozilla -O /tmp/address$agi_uniqueid.mp3 \"http://translate.google.com/translate_tts?ie=UTF-8&tl=en&q=$phonedid\"");
+			#lame path seems to have changed between servers..
+                	system("/usr/local/bin/lame --decode /tmp/address$agi_uniqueid.mp3 /tmp/address1$agi_uniqueid.wav");
+                	system("/bin/rm /tmp/address$agi_uniqueid.mp3");
+                	system("/usr/local/bin/sox /tmp/address1$agi_uniqueid.wav -r 8000 -c 1 /tmp/address$agi_uniqueid.gsm");
+			$AGI->stream_file("the-new-number-is");
+			$AGI->stream_file("/tmp/address$agi_uniqueid");
+			$AGI->stream_file("againthenumberis");
+			$AGI->stream_file("/tmp/address$agi_uniqueid");
+			system("/bin/rm /tmp/address1$agi_uniqueid.wav");
+                	system("/bin/rm /tmp/address$agi_uniqueid.gsm");
+                        $AGI->stream_file("pls-wait-connect-call");
+                        $AGI->set_context(default);
+                        $AGI->exec('Dial', "Local/*55$clid$did\@$company|20|to");
+                        $DONE1=1;
+                        $AGI->hangup();
+                        exit(0);
+                        }
+
+	$ia++;
+}		
+
+$AGI->hangup();
+exit(0);
