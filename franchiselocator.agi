@@ -1,0 +1,139 @@
+#!/usr/bin/perl
+#
+#extensions.conf
+#exten => _STORE.,1,Answer
+#exten => _STORE.,2,Set(CALLFILENAME=${CALLERIDNUM}-${EXTEN:5}-${TIMESTAMP})
+#exten => _STORE.,3,AGI(/nfs/scripts/franchiselocator.agi,${EXTEN:5})
+#
+use DBI;
+use Asterisk::AGI;
+use LWP::UserAgent;
+my $dbh = DBI->connect("dbi:mysql:host=127.0.0.1:DBSERVER","DBUSER",'DBPASS');
+
+# TIMEOUT is maximum number of seconds for http requests (we don't want to take too long)
+$TIMEOUT = 3;
+$VERSION = '0.03';
+$AGI = new Asterisk::AGI;
+my $DONE1 = 0;
+my %input = $AGI->ReadParse();
+$company = $ARGV[0];
+$agi_uniqueid = $input{'uniqueid'};
+$sipy = "select CallerNum from Phones where Account=$company limit 1";
+                $zthy = $dbh->prepare($sipy);
+                $zthy->execute() or print "Fail\n" and die;
+                my $array_stuffy = $zthy->fetchall_arrayref();
+                foreach my $stuffy (@$array_stuffy) {
+                my ($fromclid)=@$stuffy;
+		$clid=$fromclid;
+		}
+
+while (!$DONE1) {
+$zipcode="";
+$loop1=0;
+	while (($loop1 < 2) && ($zipcode eq "")){
+	$loop1++;
+
+#this is a custom gsm file in the asterisk directory please-enter-your-zipcode.gsm
+#my $zipcode1 = $AGI->get_data("please-enter-your-zipcode", "10000", "5");
+
+my $zipcode1 = $AGI->get_data("/nfs/voicefiles/outgoing/$company", "10000", "5");
+	
+	$zipcode=$zipcode1;
+	}
+# If we timeout, or enter nothing, then we're done	
+	if ($zipcode eq "") {
+		$DONE1=1;
+		$AGI->exec('Playback', "unabletomatch");
+		$AGI->exec('Playback', "goodbye");
+		$AGI->hangup();
+		exit(0);
+	}
+
+system("/usr/bin/wget --output-document=/tmp/geocode.csv \"http://www.mapquestapi.com/geocoding/v1/address?key=<APIKEY>=$zipcode&callback=renderGeocode&outFormat=csv\"");
+
+$count=0;
+open(IN,"/tmp/geocode.csv");
+foreach $line (<IN>){
+chomp($line);
+$count++;
+if ($count eq 2){
+$line =~ s/\"//g;
+($us,$state,$county,$city,$zipcode,$junk,$lat,$long,$junk2,$junk3,$junk4,$junk5,$junk6,$junk7,$lat2,$long2) = split(/\,/,$line);
+}
+}
+if ($count < 2){
+$AGI->stream_file("an-error-has-occured");
+$AGI->stream_file("please-hang-up-and-try-again");
+$AGI->exec('Playback', "goodbye");
+$AGI->hangup();
+exit(0);
+}
+close IN;
+system("/bin/rm /tmp/geocode.csv");
+
+#25 in distances is for 25 miles or less
+
+$sip= "SELECT Store,Name,Address,DID,AddInfo,ZipCode, Latitude, Longitude, SQRT(
+    POW(69.1 * (Latitude - $lat), 2) +
+    POW(69.1 * ($long - Longitude) * COS(Latitude / 57.3), 2)) AS distance
+FROM FranchiseLocator WHERE Company=$company HAVING distance <= 25 ORDER BY distance limit 3"; 
+
+#$sip = "select Store,Name,Address,DID from FranchiseLocator where ZipCode=$zipcode and Company=$company";
+
+                $zth = $dbh->prepare($sip);
+                $zth->execute() or print "Fail\n" and die;
+                my $array_stuff = $zth->fetchall_arrayref();
+                foreach my $stuff (@$array_stuff) {
+                my ($store,$name,$address,$did,$addinfo,$zip,$latjunk,$longjunk)=@$stuff;
+		$text=$name.",".$address.",".$zip.",";
+	#OLD WAY USING SWIFT	system("/usr/local/bin/swift -o /tmp/$agi_uniqueid.wav -p audio/channels=1,audio/sampling-rate=8000 ' $text '");
+	#New Way Using Google
+		system("/usr/bin/wget -q -U Mozilla -O /tmp/$agi_uniqueid.mp3 \"http://translate.google.com/translate_tts?ie=UTF-8&tl=en&q=$text\"");
+		system("/usr/bin/lame --decode /tmp/$agi_uniqueid.mp3 /tmp/$agi_uniqueid.wav");
+		system("/bin/rm /tmp/$agi_uniqueid.mp3");
+	#End New Way
+		system("sox /tmp/$agi_uniqueid.wav -r 8000 -c 1 /tmp/$agi_uniqueid.gsm");
+		system("/bin/rm /tmp/$agi_uniqueid.wav");
+	#More new Google Way because of size constraints
+		system("/usr/bin/wget -q -U Mozilla -O /tmp/a$agi_uniqueid.mp3 \"http://translate.google.com/translate_tts?ie=UTF-8&tl=en&q=$addinfo\"");
+                system("/usr/bin/lame --decode /tmp/a$agi_uniqueid.mp3 /tmp/a$agi_uniqueid.wav");
+                system("/bin/rm /tmp/a$agi_uniqueid.mp3");
+		system("sox /tmp/a$agi_uniqueid.wav -r 8000 -c 1 /tmp/a$agi_uniqueid.gsm");
+		system("/bin/rm /tmp/a$agi_uniqueid.wav");
+		system("sleep 2");
+
+		$oneortwo = "";
+		#my $oneortwo = $AGI->get_data("/tmp/$agi_uniqueid", "1", "10");	
+		$AGI->stream_file("/tmp/$agi_uniqueid");
+		$AGI->stream_file("/tmp/a$agi_uniqueid");
+		system("/bin/rm /tmp/$agi_uniqueid.gsm");
+		system("/bin/rm /tmp/a$agi_uniqueid.gsm");
+
+		$loop2=0;
+                while (($loop2 < 2) && ($oneortwo eq "")){
+		#oneortwo is a sound file that has been created saying one or two
+		 my $oneortwo1 = $AGI->get_data("oneortwo", "10000", "1");
+		 $oneortwo=$oneortwo1;
+		 $loop2++;
+			 }
+		if ($oneortwo eq "") {
+			$DONE1=1;
+			$AGI->exec('Playback', "unabletomatch");
+			$AGI->exec('Playback', "goodbye");
+			$AGI->hangup();
+                	exit(0);
+		        }
+		 if ($oneortwo eq 1){
+			$AGI->stream_file("pls-wait-connect-call");
+			$AGI->set_context(default);
+			$AGI->exec('Dial', "Local/4$clid$did|20|to");
+			$DONE1=1;
+			$AGI->hangup();	
+			exit(0);
+			}
+		}
+		$AGI->exec('Playback', "unabletomatch");
+					
+	}	
+$AGI->hangup();
+exit(0);
